@@ -1,0 +1,121 @@
+---
+title: "Discussion and Analysis of Gun Violence in New York City, 2006-2020"
+author: "CU Boulder MSDS"
+date: "11/08/2021"
+#output: pdf_document
+output:
+  bookdown::pdf_document2: default
+bibliography: nypd.bib
+link-citations: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(bookdown)
+library(ggplot2)
+library(ggmap)
+library(maps)
+library(mapdata)
+library(lubridate)
+```
+
+---
+
+# Introduction
+
+In this document we discuss the characteristics and trends in gun violence in New York City _(NYC)_, with a focus on bourough specific numbers in the years 2006-2020.
+
+# Techniques Used
+
+We are interested in the techniques and tools used in the preparation and analysis of the data used. The following sections will contain discussion of the successive steps in the data science pipeline such as selection, preparation, wrangling, modelling, evaluation and deployment.
+
+## Data Sources and Importation
+
+The New York Police Department _(NYPD)_ collects and aggregates data on shooting incidents in NYC on a quarterly basis in collaboration with the Office of Management Analysis and Planning. These data are available online through the NYPD website and _data.gov_, a US Federal Government website dedicated to the promulgation of high-quality datasets from the Executive @datagov. 
+
+We begin our procedure by selecting our dataset and importing the data into RStudio. The data comes from _data.gov_ and is titled "NYPD Shooting Incident Data (Historic)"@nypd-data. We read in the data from the local file "NYPD_Shooting_Incident_Data__Historic_.csv", which we have labelled as _filename_ using the _read_csv(filename)_ command. We can then review what is contained in the raw dataset using _summary(nypd_data)_.
+
+On initial inspection, we see that the dataset has a large amount of data which is not relevant to our particular focus. Information about the date and time, the incident number, race, and other case characteristics are superfluous and bogging down our runtime. As such, it's necessary to perform some cleaning and tidying of the data. 
+
+```{r}
+filename = {"NYPD_Shooting_Incident_Data__Historic_.csv"}
+nypd_data <- read_csv(filename)
+```
+
+## Data Management and Tidying
+
+Given the focus of our research, we want to remove unnecessary data from our dataset. We can use the _select()_ command to remove any elements which are not needed. Since our research is centred on the relationship between sex and locale, we want to additionally remove any cases where the perpetrator's sex is unknown or simply unlabeled. This can be accomplished by using the _filter()_ command. 
+
+```{r}
+nypd_data <- nypd_data %>%
+  select(-c(OCCUR_TIME, 
+            PRECINCT,
+            LOCATION_DESC, 
+            PERP_AGE_GROUP,
+            PERP_SEX,
+            VIC_SEX,
+            Latitude,
+            Longitude,
+            Lon_Lat,
+            PERP_RACE, 
+            VIC_AGE_GROUP, 
+            VIC_RACE, 
+            STATISTICAL_MURDER_FLAG, 
+            INCIDENT_KEY, 
+            JURISDICTION_CODE,
+            X_COORD_CD,
+            Y_COORD_CD))
+nypd_data$OCCUR_DATE <- as.Date(nypd_data$OCCUR_DATE, tryFormats = "%m/%d/%Y")
+nypd_data$OCCUR_DATE <- year(nypd_data$OCCUR_DATE)
+
+brooklyn = nypd_data %>%
+  filter(BORO == "BROOKLYN")
+brooklyn_counts = data.frame(table(brooklyn$OCCUR_DATE))
+```
+
+## Analysis
+
+We are interested in the year-on-year trends surrounding gun violence in Brooklyn. We began by building a histogram of annual shootings in each borough using _ggplot_.
+
+```{r}
+ggplot(nypd_data, aes(OCCUR_DATE)) +
+  geom_histogram(data = brooklyn, color = "red", fill = "red", binwidth = 1, alpha = 0.7)
+```
+
+## Modelling and Predictions
+
+In order to understand the importance of the change in 2020, we produced a linear model describing the decline in shootings between 2006-2019. This was done using the _lm_ tool for linear modelling.
+
+
+```{r}
+years = as.factor(min(nypd_data$OCCUR_DATE):max(nypd_data$OCCUR_DATE))
+brooklyn_counts$Var1 <- as.numeric(brooklyn_counts$Var1)
+brooklyn_model = lm(Freq[1:14] ~ Var1[1:14], data = brooklyn_counts)
+predict_brooklyn = data.frame("Predicted" = predict(brooklyn_model, Var1 = years))
+
+future <- data.frame('Var1'=c(15))
+x = predict(brooklyn_model, future)[1]
+predict_brooklyn <- rbind(predict_brooklyn, x)
+brooklyn_counts$Predicted <- predict_brooklyn 
+brooklyn_counts$years <- years
+#colnames(brooklyn_counts)[3] <- "Predicted"
+```
+
+We can now plot the line fitting the prediction on top of the histogram and see the gap between expectation and reality. We can clearly see a tight fit between the predicted and actual cases until 2020, where the gap is very large. This is generally sufficient to indicate further investigation is necessary.
+
+```{r}
+ggplot() + 
+  geom_point(data = brooklyn_counts, aes(years, Freq), color = "red") + 
+  geom_point(data = brooklyn_counts, aes(years, predict_brooklyn$Predicted), color = "blue") +
+  xlab("Year") + ylab("Shooting incidents")
+```
+
+# Discussion
+
+In the course of the investgation into shootings in Brooklyn, we have discovered that there exists a strong declining trend in shooting incidents. The year 2020 marked a dramatic and unusual change in this trend, with an increase of 437 incidents over 2019. The model used to explore this trend was linear and excluded the 2020 data, as it was flagged as an anomaly. This model predicted 324 incidents had the trend continued, 485 fewer than actually ocurred. This suggests that something unusual must have happened in 2020 spurring on this change, whether it be improved data collection and reporting, a change in behaviour, a change in government policy, or some other cause. Given that the Black Lives Matter movement and calls to "defund the police" were prominent in 2020, it is possible that increased scrutiny was a cause of the increase, although further investigation will be necessary to determine what the proximate cause is. 
+
+# Conclusions
+
+A dramatic increase in shootings in the New York City borough of Brooklyn was ovserved in 2020. This bucks a consistent trend of decline over the past 14 years. Although no causes have been identified, the change is dramatic and warrants further investigation.
